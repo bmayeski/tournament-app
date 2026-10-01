@@ -61,7 +61,8 @@ export function renderMyTeam(teamId) {
             const p = pools.find(pool => pool.id === pId);
             if (p) {
                 poolName = p.name;
-                location = p.location || location;
+                // Grab the pool's specific site, then fall back to the tournament default
+                location = p.site || tournamentData?.location || 'TBD'; 
             }
             break;
         }
