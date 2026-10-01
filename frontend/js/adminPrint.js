@@ -45,7 +45,7 @@ export function printPoolSheets() {
             const pName = poolObj ? poolObj.name.replace('Pool ', '') : '';
             const r = parseInt(parts[2], 10);
             const rStr = r === 1 ? '1st' : r === 2 ? '2nd' : r === 3 ? '3rd' : r === 4 ? '4th' : r;
-            return `${rStr} ${pName}`;
+            return rStr + ' ' + pName;
         }
         
         const realTeam = allTeams.find(t => t.id === refStr);
@@ -115,12 +115,13 @@ export function printPoolSheets() {
     `;
 
     pools.forEach(pool => {
-        let poolAdvancementText = "";
-        const pName = (pool.name || '').toUpperCase();
-        if (pName.includes('A') || pName.includes('B')) {
-            poolAdvancementText = "1st & 2nd advance to Gold. 3rd Pool B auto-advances to Silver. 3rd Pool A plays 4th Pool B for Silver.";
-        } else {
-            poolAdvancementText = "1st & 2nd play Crossover for Gold. 3rd Pool C plays 4th Pool D for Silver.";
+        // --- DYNAMIC ADVANCEMENT TEXT ---
+        const activeDivisions = parseInt(config.divisions || '2', 10);
+        let poolAdvancementText = "1st and 2nd advance to Gold, 3rd and 4th advance to Silver.";
+        
+        // Failsafe in case you switch to a 3-division tournament format
+        if (activeDivisions === 3) {
+            poolAdvancementText = "1st and 2nd advance to Gold, 3rd advances to Silver, and 4th advances to Bronze.";
         }
 
         const poolTeams = allTeams.filter(t => t.pool_id === pool.id).sort((a, b) => a.seed - b.seed);
@@ -212,7 +213,7 @@ export function printPoolSheets() {
                             else if (stats.rank === 3) badgeClass = 'badge-3rd';
                             else if (stats.rank === 4) badgeClass = 'badge-4th';
                             
-                            placementBadge = `<span class="placement-badge ${badgeClass}">${getOrdinal(stats.rank)}</span>`;
+                            placementBadge = '<span class="placement-badge ' + badgeClass + '">' + getOrdinal(stats.rank) + '</span>';
                         }
                         
                         return `
@@ -262,8 +263,11 @@ export function printPoolSheets() {
                     if (aSets > bSets && aSets > 0) winnerId = ms.teamA;
                     if (bSets > aSets && bSets > 0) winnerId = ms.teamB;
                     
-                    const displaySeedA = `<span class="seed-badge ${winnerId === ms.teamA ? 'winner-seed' : ''}">${seedA}</span>`;
-                    const displaySeedB = `<span class="seed-badge ${winnerId === ms.teamB ? 'winner-seed' : ''}">${seedB}</span>`;
+                    const winnerClassA = winnerId === ms.teamA ? 'winner-seed' : '';
+                    const displaySeedA = '<span class="seed-badge ' + winnerClassA + '">' + seedA + '</span>';
+                    
+                    const winnerClassB = winnerId === ms.teamB ? 'winner-seed' : '';
+                    const displaySeedB = '<span class="seed-badge ' + winnerClassB + '">' + seedB + '</span>';
                     
                     const fallbackTime = addMinutes(poolStart, poolDur * index);
                     const displayTime = formatTime(ms.time || fallbackTime);
@@ -287,7 +291,7 @@ export function printPoolSheets() {
             </div>
             `;
         } else {
-            html += `<div style="font-style: italic; color: #64748b; text-align: center; margin: 20px 0;">No matches have been scheduled for this pool yet.</div>`;
+            html += '<div style="font-style: italic; color: #64748b; text-align: center; margin: 20px 0;">No matches have been scheduled for this pool yet.</div>';
         }
 
         html += `
