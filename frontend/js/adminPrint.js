@@ -1,8 +1,18 @@
 // adminPrint.js
 import { getTournamentData, getPools, getTeams, getMatches } from './state.js';
 import { getAllPoolStandings, isSeedLocked } from './uiMath.js';
-import { formatTime, addMinutes, getSiteColor } from './utils.js';
+import { formatTime, addMinutes } from './utils.js';
 import { generateBracketData } from './bracketGenerator.js';
+
+// DYNAMIC COLOR HELPER (Replaces the static one from utils.js)
+const getPrintSiteColor = (siteName, config) => {
+    if (!siteName) return '#475569';
+    const s = siteName.trim();
+    if (config.site1Name && s === config.site1Name.trim()) return config.site1Color || '#3b82f6';
+    if (config.site2Name && s === config.site2Name.trim()) return config.site2Color || '#ef4444';
+    if (config.site3Name && s === config.site3Name.trim()) return config.site3Color || '#22c55e';
+    return '#3b82f6'; 
+};
 
 export function printPoolSheets() {
     const tournamentData = getTournamentData();
@@ -115,17 +125,15 @@ export function printPoolSheets() {
     `;
 
     pools.forEach(pool => {
-        // --- DYNAMIC ADVANCEMENT TEXT ---
         const activeDivisions = parseInt(config.divisions || '2', 10);
         let poolAdvancementText = "1st and 2nd advance to Gold, 3rd and 4th advance to Silver.";
         
-        // Failsafe in case you switch to a 3-division tournament format
         if (activeDivisions === 3) {
             poolAdvancementText = "1st and 2nd advance to Gold, 3rd advances to Silver, and 4th advances to Bronze.";
         }
 
         const poolTeams = allTeams.filter(t => t.pool_id === pool.id).sort((a, b) => a.seed - b.seed);
-        const siteColor = getSiteColor(pool.site);
+        const siteColor = getPrintSiteColor(pool.site, config);
         const poolMatches = allMatches.filter(m => m.pool_id === pool.id).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
         
         const teamStats = {};
@@ -204,92 +212,90 @@ export function printPoolSheets() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${displayTeams.map((stats) => {
-                        let placementBadge = '';
-                        if (isFinished) {
-                            let badgeClass = 'badge-other';
-                            if (stats.rank === 1) badgeClass = 'badge-1st';
-                            else if (stats.rank === 2) badgeClass = 'badge-2nd';
-                            else if (stats.rank === 3) badgeClass = 'badge-3rd';
-                            else if (stats.rank === 4) badgeClass = 'badge-4th';
-                            
-                            placementBadge = '<span class="placement-badge ' + badgeClass + '">' + getOrdinal(stats.rank) + '</span>';
-                        }
-                        
-                        return `
-                        <tr>
-                            <td class="team-rank">${stats.seed}</td>
-                            <td class="team-name">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <span>${stats.name}</span>${placementBadge}
-                                </div>
-                            </td>
-                            <td>${toRoman(stats.mw)}</td>
-                            <td>${toRoman(stats.ml)}</td>
-                            <td>${toRoman(stats.sw)}</td>
-                            <td>${toRoman(stats.sl)}</td>
-                        </tr>
-                        `;
-                    }).join('')}
+        `;
+
+        html += displayTeams.map((stats) => {
+            let placementBadge = '';
+            if (isFinished) {
+                let badgeClass = 'badge-other';
+                if (stats.rank === 1) badgeClass = 'badge-1st';
+                else if (stats.rank === 2) badgeClass = 'badge-2nd';
+                else if (stats.rank === 3) badgeClass = 'badge-3rd';
+                else if (stats.rank === 4) badgeClass = 'badge-4th';
+                
+                placementBadge = '<span class="placement-badge ' + badgeClass + '">' + getOrdinal(stats.rank) + '</span>';
+            }
+            
+            return '<tr>' +
+                '<td class="team-rank">' + stats.seed + '</td>' +
+                '<td class="team-name">' +
+                    '<div style="display: flex; justify-content: space-between; align-items: center;">' +
+                        '<span>' + stats.name + '</span>' + placementBadge +
+                    '</div>' +
+                '</td>' +
+                '<td>' + toRoman(stats.mw) + '</td>' +
+                '<td>' + toRoman(stats.ml) + '</td>' +
+                '<td>' + toRoman(stats.sw) + '</td>' +
+                '<td>' + toRoman(stats.sl) + '</td>' +
+            '</tr>';
+        }).join('');
+
+        html += `
                 </tbody>
             </table>
         `;
 
         if (poolMatches.length > 0) {
-            html += `
-            <div class="matches-wrapper">
-                ${poolMatches.map((ms, index) => {
-                    const tA = poolTeams.find(t => t.id === ms.teamA);
-                    const tB = poolTeams.find(t => t.id === ms.teamB);
-                    const refTeam = poolTeams.find(t => t.id === ms.ref);
-                    
-                    const seedA = tA ? tA.seed : formatSeedPrint(ms.teamA);
-                    const seedB = tB ? tB.seed : formatSeedPrint(ms.teamB);
-                    const refSeed = refTeam ? refTeam.seed : formatSeedPrint(ms.ref);
-                    
-                    const s1A = parseInt(ms.s1A, 10) || 0;
-                    const s1B = parseInt(ms.s1B, 10) || 0;
-                    const s2A = parseInt(ms.s2A, 10) || 0;
-                    const s2B = parseInt(ms.s2B, 10) || 0;
-                    const s3A = parseInt(ms.s3A, 10) || 0;
-                    const s3B = parseInt(ms.s3B, 10) || 0;
+            html += '<div class="matches-wrapper">';
+            html += poolMatches.map((ms, index) => {
+                const tA = poolTeams.find(t => t.id === ms.teamA);
+                const tB = poolTeams.find(t => t.id === ms.teamB);
+                const refTeam = poolTeams.find(t => t.id === ms.ref);
+                
+                const seedA = tA ? tA.seed : formatSeedPrint(ms.teamA);
+                const seedB = tB ? tB.seed : formatSeedPrint(ms.teamB);
+                const refSeed = refTeam ? refTeam.seed : formatSeedPrint(ms.ref);
+                
+                const s1A = parseInt(ms.s1A, 10) || 0;
+                const s1B = parseInt(ms.s1B, 10) || 0;
+                const s2A = parseInt(ms.s2A, 10) || 0;
+                const s2B = parseInt(ms.s2B, 10) || 0;
+                const s3A = parseInt(ms.s3A, 10) || 0;
+                const s3B = parseInt(ms.s3B, 10) || 0;
 
-                    let aSets = 0; let bSets = 0;
-                    if (s1A > s1B) aSets++; else if (s1B > s1A) bSets++;
-                    if (s2A > s2B) aSets++; else if (s2B > s2A) bSets++;
-                    if (s3A > s3B) aSets++; else if (s3B > s3A) bSets++;
-                    
-                    let winnerId = null;
-                    if (aSets > bSets && aSets > 0) winnerId = ms.teamA;
-                    if (bSets > aSets && bSets > 0) winnerId = ms.teamB;
-                    
-                    const winnerClassA = winnerId === ms.teamA ? 'winner-seed' : '';
-                    const displaySeedA = '<span class="seed-badge ' + winnerClassA + '">' + seedA + '</span>';
-                    
-                    const winnerClassB = winnerId === ms.teamB ? 'winner-seed' : '';
-                    const displaySeedB = '<span class="seed-badge ' + winnerClassB + '">' + seedB + '</span>';
-                    
-                    const fallbackTime = addMinutes(poolStart, poolDur * index);
-                    const displayTime = formatTime(ms.time || fallbackTime);
-                    
-                    return `
-                    <div class="match-row">
-                        <div class="time-badge">${displayTime}</div>
-                        <div class="match-info">
-                            <span class="match-num">Match ${index + 1}</span> 
-                            <span>${displaySeedA} &nbsp;&nbsp;v&nbsp;&nbsp; ${displaySeedB}</span> 
-                            <span class="ref-info">(${refSeed} ref)</span>
-                        </div>
-                        <div class="game-boxes">
-                            <div class="game-box-group">G1 <div class="box">${ms.s1A ?? ''}</div><div class="box">${ms.s1B ?? ''}</div></div>
-                            <div class="game-box-group">G2 <div class="box">${ms.s2A ?? ''}</div><div class="box">${ms.s2B ?? ''}</div></div>
-                            <div class="game-box-group">G3 <div class="box">${ms.s3A ?? ''}</div><div class="box">${ms.s3B ?? ''}</div></div>
-                        </div>
-                    </div>
-                    `;
-                }).join('')}
-            </div>
-            `;
+                let aSets = 0; let bSets = 0;
+                if (s1A > s1B) aSets++; else if (s1B > s1A) bSets++;
+                if (s2A > s2B) aSets++; else if (s2B > s2A) bSets++;
+                if (s3A > s3B) aSets++; else if (s3B > s3A) bSets++;
+                
+                let winnerId = null;
+                if (aSets > bSets && aSets > 0) winnerId = ms.teamA;
+                if (bSets > aSets && bSets > 0) winnerId = ms.teamB;
+                
+                const winnerClassA = winnerId === ms.teamA ? 'winner-seed' : '';
+                const displaySeedA = '<span class="seed-badge ' + winnerClassA + '">' + seedA + '</span>';
+                
+                const winnerClassB = winnerId === ms.teamB ? 'winner-seed' : '';
+                const displaySeedB = '<span class="seed-badge ' + winnerClassB + '">' + seedB + '</span>';
+                
+                const fallbackTime = addMinutes(poolStart, poolDur * index);
+                const displayTime = formatTime(ms.time || fallbackTime);
+                
+                return '<div class="match-row">' +
+                    '<div class="time-badge">' + displayTime + '</div>' +
+                    '<div class="match-info">' +
+                        '<span class="match-num">Match ' + (index + 1) + '</span> ' +
+                        '<span>' + displaySeedA + ' &nbsp;&nbsp;v&nbsp;&nbsp; ' + displaySeedB + '</span> ' +
+                        '<span class="ref-info">(' + refSeed + ' ref)</span>' +
+                    '</div>' +
+                    '<div class="game-boxes">' +
+                        '<div class="game-box-group">G1 <div class="box">' + (ms.s1A ?? '') + '</div><div class="box">' + (ms.s1B ?? '') + '</div></div>' +
+                        '<div class="game-box-group">G2 <div class="box">' + (ms.s2A ?? '') + '</div><div class="box">' + (ms.s2B ?? '') + '</div></div>' +
+                        '<div class="game-box-group">G3 <div class="box">' + (ms.s3A ?? '') + '</div><div class="box">' + (ms.s3B ?? '') + '</div></div>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+            html += '</div>';
         } else {
             html += '<div style="font-style: italic; color: #64748b; text-align: center; margin: 20px 0;">No matches have been scheduled for this pool yet.</div>';
         }
@@ -335,12 +341,6 @@ export function printBrackets() {
 
     const bDur = parseInt(config.bracketDuration || 60, 10);
     const configStart = config.start || '13:00';
-    const tSeed1 = addMinutes(configStart, bDur * 0);
-    const tSeed2 = addMinutes(configStart, bDur * 1);
-    const tQf1   = addMinutes(configStart, bDur * (hasSeeding ? 2 : 0));
-    const tQf2   = addMinutes(configStart, bDur * (hasSeeding ? 3 : 1));
-    const tSf    = addMinutes(configStart, bDur * (hasSeeding ? 4 : 2));
-    const tFinal = addMinutes(configStart, bDur * (hasSeeding ? 5 : 3));
 
     const printWin = window.open('', '_blank');
     
@@ -407,8 +407,6 @@ export function printBrackets() {
 
     divisions.forEach(div => {
         let prefix = div === 'Gold' ? 'G' : div === 'Silver' ? 'S' : 'B';
-        let r1 = div === 'Gold' ? 1 : div === 'Silver' ? 3 : 5;
-        let r2 = div === 'Gold' ? 2 : div === 'Silver' ? 4 : 6;
         
         let bracketData = generateBracketData(prefix, pools, allTeams, config, hasSeeding);
 
@@ -441,7 +439,7 @@ export function printBrackets() {
                 
                 let travel = '';
                 if (pSite && matchSite && pSite !== matchSite) {
-                    travel = `<span style="color: ${getSiteColor(pSite)}; margin-left: 4px;">(from ${pSite})</span>`;
+                    travel = '<span style="color: ' + getPrintSiteColor(pSite, config) + '; margin-left: 4px;">(from ' + pSite + ')</span>';
                 }
 
                 const poolStandings = standingsByPool[poolId] || [];
@@ -451,9 +449,9 @@ export function printBrackets() {
                     : false; 
                 
                 if (seedLocked && poolStandings[rankIndex]) {
-                    return { name: poolStandings[rankIndex].name, hint: `${rankStr} ${poolName}`, travel, resolved: true };
+                    return { name: poolStandings[rankIndex].name, hint: rankStr + ' ' + poolName, travel, resolved: true };
                 }
-                return { name: '', hint: `${rankStr} ${poolName}`, travel, resolved: false };
+                return { name: '', hint: rankStr + ' ' + poolName, travel, resolved: false };
             }
             
             if (typeof teamRef === 'string' && (teamRef.startsWith('winner:') || teamRef.startsWith('loser:'))) {
@@ -465,13 +463,13 @@ export function printBrackets() {
                 
                 const typeStr = type === 'winner' ? 'Winner' : 'Loser';
                 const hint = isCrossDivision 
-                    ? `${typeStr} Match ${targetNum} (${targetDivName})`
-                    : `${typeStr} Match ${targetNum}`;
+                    ? typeStr + ' Match ' + targetNum + ' (' + targetDivName + ')'
+                    : typeStr + ' Match ' + targetNum;
                     
                 const targetMatch = bracketData.find(m => m.id === matchId);
                 let travel = '';
                 if (targetMatch && targetMatch.site && matchSite && targetMatch.site !== matchSite) {
-                    travel = `<span style="color: ${getSiteColor(targetMatch.site)}; margin-left: 4px;">(from ${targetMatch.site})</span>`;
+                    travel = '<span style="color: ' + getPrintSiteColor(targetMatch.site, config) + '; margin-left: 4px;">(from ' + targetMatch.site + ')</span>';
                 }
 
                 if (targetMatch && targetMatch.raw) {
@@ -506,20 +504,20 @@ export function printBrackets() {
                  const num = matchId.replace(/^[GSB]/, '');
                  const divPrefix = matchId.charAt(0);
                  const divName = divPrefix === 'G' ? 'Gold' : divPrefix === 'S' ? 'Silver' : 'Bronze';
-                 return `Loser M${num} (${divName})`;
+                 return 'Loser M' + num + ' (' + divName + ')';
              }
              if (ref.startsWith('seed:')) {
                  const parts = ref.split(':');
                  const rank = parts[2] == 1 ? '1st' : parts[2] == 2 ? '2nd' : parts[2] == 3 ? '3rd' : '4th';
                  const pName = pools.find(p => p.id === parts[1])?.name || 'Pool';
-                 return `${rank} ${pName}`;
+                 return rank + ' ' + pName;
              }
              if (typeof ref === 'string' && ref.toLowerCase().includes('loser')) {
                  if (!ref.includes('(')) {
                      const numMatch = ref.match(/\d+/);
                      const num = numMatch ? numMatch[0] : '';
                      let cleanedRef = ref.replace(/of\s+/i, ''); 
-                     return num ? `Loser M${num} (${div})` : `${cleanedRef} (${div})`;
+                     return num ? 'Loser M' + num + ' (' + div + ')' : cleanedRef + ' (' + div + ')';
                  }
              }
              return ref;
@@ -528,21 +526,21 @@ export function printBrackets() {
         const generateScoreBoxes = (matchRaw, teamLetter) => {
             let boxes = '';
             for (let i = 1; i <= bracketSets; i++) {
-                let score = matchRaw[`s${i}${teamLetter}`];
+                let score = matchRaw['s' + i + teamLetter];
                 
                 if (score == null || score === 'null' || score === '') {
                     score = ''; 
                     
                     if (bracketSets === 3 && i === 3) {
-                        const s1 = matchRaw[`s1${teamLetter}`];
-                        const s2 = matchRaw[`s2${teamLetter}`];
+                        const s1 = matchRaw['s1' + teamLetter];
+                        const s2 = matchRaw['s2' + teamLetter];
                         if (s1 != null && s1 !== 'null' && s1 !== '' && 
                             s2 != null && s2 !== 'null' && s2 !== '') {
                             score = '-';
                         }
                     }
                 }
-                boxes += `<div class="score-box">${score}</div>`;
+                boxes += '<div class="score-box">' + score + '</div>';
             }
             return boxes;
         };
@@ -562,35 +560,30 @@ export function printBrackets() {
             const t1Class = (aWins > bWins && aWins > 0) ? 'write-line winner-highlight' : 'write-line';
             const t2Class = (bWins > aWins && bWins > 0) ? 'write-line winner-highlight' : 'write-line';
             
-            return `
-            <div class="match-box">
-                <div class="time-badge">${m.time}</div>
-                <div class="ref-badge">Ref: ${refStr}</div>
-                
-                <div class="match-header">
-                    <div class="match-id-container">
-                        <span class="match-id">Match ${m.id.replace(/^[GSB]/, '')}</span>
-                    </div>
-                    <span class="match-loc" style="color: ${getSiteColor(m.site)};">${m.site || 'Site TBD'}</span>
-                </div>
-                
-                <div class="team-slot">
-                    <div class="team-line-container">
-                        <div class="${t1Class}">${t1.name}</div>
-                        ${generateScoreBoxes(m.raw, 'A')}
-                    </div>
-                    <div class="team-hint">${t1.hint} ${t1.travel}</div>
-                </div>
-                
-                <div class="team-slot">
-                    <div class="team-line-container">
-                        <div class="${t2Class}">${t2.name}</div>
-                        ${generateScoreBoxes(m.raw, 'B')}
-                    </div>
-                    <div class="team-hint">${t2.hint} ${t2.travel}</div>
-                </div>
-            </div>
-            `;
+            return '<div class="match-box">' +
+                '<div class="time-badge">' + m.time + '</div>' +
+                '<div class="ref-badge">Ref: ' + refStr + '</div>' +
+                '<div class="match-header">' +
+                    '<div class="match-id-container">' +
+                        '<span class="match-id">Match ' + m.id.replace(/^[GSB]/, '') + '</span>' +
+                    '</div>' +
+                    '<span class="match-loc" style="color: ' + getPrintSiteColor(m.site, config) + ';">' + (m.site || 'Site TBD') + '</span>' +
+                '</div>' +
+                '<div class="team-slot">' +
+                    '<div class="team-line-container">' +
+                        '<div class="' + t1Class + '">' + t1.name + '</div>' +
+                        generateScoreBoxes(m.raw, 'A') +
+                    '</div>' +
+                    '<div class="team-hint">' + t1.hint + ' ' + t1.travel + '</div>' +
+                '</div>' +
+                '<div class="team-slot">' +
+                    '<div class="team-line-container">' +
+                        '<div class="' + t2Class + '">' + t2.name + '</div>' +
+                        generateScoreBoxes(m.raw, 'B') +
+                    '</div>' +
+                    '<div class="team-hint">' + t2.hint + ' ' + t2.travel + '</div>' +
+                '</div>' +
+            '</div>';
         };
 
         html += `
@@ -606,63 +599,33 @@ export function printBrackets() {
 
         if (hasSeeding && prefix !== 'S') {
             const sMatches = getRound('Seeding Round');
-            html += `<div class="col">
-               <div class="round-title">Seeding Round</div>
-               ${sMatches.map(m => `
-                   <div class="pair" style="justify-content: center;">
-                       ${renderMatchBox(m)}
-                   </div>
-               `).join('')}
-            </div>`;
+            html += '<div class="col"><div class="round-title">Seeding Round</div>';
+            html += sMatches.map(m => '<div class="pair" style="justify-content: center;">' + renderMatchBox(m) + '</div>').join('');
+            html += '</div>';
         }
 
         const qf = getRound('Quarterfinals');
         if (qf.length === 4) {
-            html += `<div class="col">
-                <div class="round-title">Quarterfinals</div>
-                <div class="pair">
-                    ${renderMatchBox(qf[0])}
-                    ${renderMatchBox(qf[1])}
-                    <div class="connector"></div><div class="stem"></div>
-                </div>
-                <div class="pair">
-                    ${renderMatchBox(qf[2])}
-                    ${renderMatchBox(qf[3])}
-                    <div class="connector"></div><div class="stem"></div>
-                </div>
-            </div>`;
+            html += '<div class="col"><div class="round-title">Quarterfinals</div>';
+            html += '<div class="pair">' + renderMatchBox(qf[0]) + renderMatchBox(qf[1]) + '<div class="connector"></div><div class="stem"></div></div>';
+            html += '<div class="pair">' + renderMatchBox(qf[2]) + renderMatchBox(qf[3]) + '<div class="connector"></div><div class="stem"></div></div>';
+            html += '</div>';
         } else if (qf.length === 2) {
-            html += `<div class="col">
-                <div class="round-title">Quarterfinals</div>
-                <div class="pair" style="justify-content: flex-end; padding-bottom: 5px;">
-                    ${renderMatchBox(qf[0])}
-                    <div class="stem" style="top: 85%;"></div>
-                </div>
-                <div class="pair" style="justify-content: flex-end; padding-bottom: 5px;">
-                    ${renderMatchBox(qf[1])}
-                    <div class="stem" style="top: 85%;"></div>
-                </div>
-            </div>`;
+            html += '<div class="col"><div class="round-title">Quarterfinals</div>';
+            html += '<div class="pair" style="justify-content: flex-end; padding-bottom: 5px;">' + renderMatchBox(qf[0]) + '<div class="stem" style="top: 85%;"></div></div>';
+            html += '<div class="pair" style="justify-content: flex-end; padding-bottom: 5px;">' + renderMatchBox(qf[1]) + '<div class="stem" style="top: 85%;"></div></div>';
+            html += '</div>';
         }
-        // If qf.length is 0 (Pure 4-Team Bracket), it skips this block entirely!
 
         const sf = getRound('Semifinals');
-        html += `<div class="col">
-            <div class="round-title">Semifinals</div>
-            <div class="pair">
-                ${renderMatchBox(sf[0])}
-                ${renderMatchBox(sf[1])}
-                <div class="connector"></div><div class="stem"></div>
-            </div>
-        </div>`;
+        html += '<div class="col"><div class="round-title">Semifinals</div>';
+        html += '<div class="pair">' + renderMatchBox(sf[0]) + renderMatchBox(sf[1]) + '<div class="connector"></div><div class="stem"></div></div>';
+        html += '</div>';
 
         const f = getRound('Finals');
-        html += `<div class="col">
-            <div class="round-title">Championship</div>
-            <div class="pair" style="justify-content: center;">
-                ${renderMatchBox(f[0])}
-            </div>
-        </div>`;
+        html += '<div class="col"><div class="round-title">Championship</div>';
+        html += '<div class="pair" style="justify-content: center;">' + renderMatchBox(f[0]) + '</div>';
+        html += '</div>';
 
         html += `
             </div>
