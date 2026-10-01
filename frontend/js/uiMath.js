@@ -91,3 +91,56 @@ export function getAllPoolStandings() {
 
     return standingsByPool;
 }
+
+// Add to the bottom of uiMath.js
+export const checkMathematicalLock = (team, index, standings, maxMatches) => {
+    if (maxMatches === 0 || team.matchesPlayed !== maxMatches) return false;
+    
+    let safeFromAbove = true;
+    let safeFromBelow = true;
+
+    for (let i = 0; i < index; i++) {
+        if (standings[i].matchesPlayed < maxMatches && standings[i].matchesWon <= team.matchesWon) {
+            safeFromAbove = false;
+        }
+    }
+    for (let i = index + 1; i < standings.length; i++) {
+        const maxPossibleWins = standings[i].matchesWon + (maxMatches - standings[i].matchesPlayed);
+        if (standings[i].matchesPlayed < maxMatches && maxPossibleWins >= team.matchesWon) {
+            safeFromBelow = false;
+        }
+    }
+    
+    return safeFromAbove && safeFromBelow;
+};
+
+// Add to uiMath.js
+export const isSeedLocked = (poolId, rankIndex, poolStandings, allMatches) => {
+    const poolTeams = poolStandings.map(t => t.id);
+    if (poolTeams.length === 0) return false;
+
+    const poolMatches = allMatches.filter(m => poolTeams.includes(m.teamA) || poolTeams.includes(m.teamB));
+    if (poolMatches.length === 0) return false;
+
+    const unfinished = poolMatches.filter(m => m.status !== 'completed' && m.status !== 'complete');
+    if (unfinished.length === 0) return true;
+
+    const team = poolStandings[rankIndex];
+    if (!team) return false;
+    if (team.isLocked || team.clinched) return true;
+
+    const expectedMatches = poolTeams.length - 1; 
+    if (team.matchesPlayed < expectedMatches) return false;
+
+    const wins = team.matchesWon;
+    if (rankIndex > 0) {
+        const teamAbove = poolStandings[rankIndex - 1];
+        if (teamAbove.matchesWon <= wins && teamAbove.matchesPlayed < expectedMatches) return false;
+    }
+    if (rankIndex < poolTeams.length - 1) {
+        const teamBelow = poolStandings[rankIndex + 1];
+        const maxPossibleWinsBelow = teamBelow.matchesWon + (expectedMatches - teamBelow.matchesPlayed);
+        if (maxPossibleWinsBelow >= wins && teamBelow.matchesPlayed < expectedMatches) return false;
+    }
+    return true;
+};

@@ -9,7 +9,8 @@ import { initScores } from './adminScores.js';
 import { populateTeamDropdown, renderMyTeam } from './uiTeam.js';
 import { renderPublicInfo, renderPublicPools } from './uiPublic.js';
 import { initManagePools, loadPoolScores } from './adminManagePools.js';
-import { renderBracketView, initBracketAdmin } from './uiBracket.js';
+import { renderBracketView } from './uiBracket.js';
+import { initBracketAdmin } from './adminManageBrackets.js';
 
 // --- VIEW NAVIGATION (ROUTER) ---
 export function switchView(viewId) {

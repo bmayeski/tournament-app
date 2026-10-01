@@ -1,31 +1,8 @@
 // uiTeam.js
 import { getTeams, getMatches, getPools, getTournamentData } from './state.js';
 import { getAllPoolStandings } from './uiMath.js';
-import { ensureReadableColor } from './utils.js';
-
-// --- TIME FORMATTERS ---
-const formatBracketTime = (startTime, durationMinutes, offsetMultiplier) => {
-    if (!startTime) return 'TBD';
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const date = new Date();
-    date.setHours(hours, minutes + (durationMinutes * offsetMultiplier), 0);
-    let h = date.getHours();
-    const m = date.getMinutes().toString().padStart(2, '0');
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h}:${m} ${ampm}`;
-};
-
-const formatPoolTime = (timeStr) => {
-    if (!timeStr) return 'TBD';
-    const parts = timeStr.split(':');
-    if (parts.length < 2) return timeStr;
-    let h = parseInt(parts[0], 10);
-    const m = parts[1];
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12 || 12;
-    return `${h}:${m} ${ampm}`;
-};
+import { ensureReadableColor, addMinutes, formatTime } from './utils.js';
+import { generateBracketData } from './bracketGenerator.js';
 
 export function populateTeamDropdown() {
     const teamSelect = document.getElementById('myTeamSelect');
@@ -74,8 +51,6 @@ export function renderMyTeam(teamId) {
     // 1. CALCULATE POOL RECORD
     let poolMatchWins = 0, poolMatchLosses = 0, poolSetWins = 0, poolSetLosses = 0;
     let poolName = 'Unknown Pool';
-    
-    // --- NEW: Fix to dynamically pull the specific pool site ---
     let location = tournamentData?.location || 'TBD';
 
     let myStanding = null;
@@ -86,8 +61,7 @@ export function renderMyTeam(teamId) {
             const p = pools.find(pool => pool.id === pId);
             if (p) {
                 poolName = p.name;
-                // Grab the 'site' property from the pool data, otherwise fallback
-                location = p.site || p.location || location;
+                location = p.location || location;
             }
             break;
         }
@@ -100,53 +74,31 @@ export function renderMyTeam(teamId) {
         poolSetLosses = myStanding.setsLost || 0;
     }
 
-    // 2. RESOLVE BRACKET MATCHES & CALCULATE BRACKET RECORD
-    const config = tournamentData?.bracket_config || { start: '13:00', duration: 60 };
-    const savedScores = tournamentData?.bracket_scores || {};
+    // 2. RESOLVE BRACKET MATCHES
+    const config = tournamentData?.bracket_config || {};
+    const savedScores = tournamentData?.bracket_scores || {}; // <-- Add this missing line!
     const hasSeeding = config.seeding === 'Yes' || tournamentData?.has_seeding_rounds === true;
-
-    const timeSeed1 = formatBracketTime(config.start, config.duration, 0); 
-    const timeSeed2 = formatBracketTime(config.start, config.duration, 1); 
-    const qfTime1 = formatBracketTime(config.start, config.duration, hasSeeding ? 2 : 0); 
-    const qfTime2 = formatBracketTime(config.start, config.duration, hasSeeding ? 3 : 1);
-    const sfTime = formatBracketTime(config.start, config.duration, hasSeeding ? 4 : 2);
-    const finalTime = formatBracketTime(config.start, config.duration, hasSeeding ? 5 : 3);
-
+    const allTeams = getTeams();
+    
     const allBracketMatches = [];
     ['gold', 'silver', 'bronze'].forEach(div => {
+        // Skip bronze if it doesn't exist
         if (div === 'bronze' && !config.locBronze) return;
         
-        let r1 = 1, r2 = 2, prefix = 'G';
-        if (div === 'silver') { r1 = 3; r2 = 4; prefix = 'S'; }
-        else if (div === 'bronze') { r1 = 5; r2 = 6; prefix = 'B'; }
+        let prefix = div === 'gold' ? 'G' : div === 'silver' ? 'S' : 'B';
+        const divMatches = generateBracketData(prefix, pools, allTeams, config, hasSeeding);
         
-        const pA = pools[0]?.id || 'poolA', pB = pools[1]?.id || 'poolB', pC = pools[2]?.id || 'poolC', pD = pools[3]?.id || 'poolD';
+        // Map the generated matches to match the uiTeam.js format
+        const mappedMatches = divMatches.map(m => ({
+            id: m.id,
+            t1: m.t1,
+            t2: m.t2,
+            ref: m.ref,
+            time: formatTime(m.rawTime),
+            col: m.col
+        }));
         
-        if (hasSeeding) {
-            allBracketMatches.push(
-                { time: timeSeed1, id: `${prefix}S1`, t1: `seed:${pA}:${r1}`, t2: `seed:${pB}:${r1}`, ref: `seed:${pD}:${r1}` },
-                { time: timeSeed2, id: `${prefix}S2`, t1: `seed:${pC}:${r1}`, t2: `seed:${pD}:${r1}`, ref: `loser:${prefix}S1` },
-                { time: timeSeed2, id: `${prefix}S3`, t1: `seed:${pA}:${r2}`, t2: `seed:${pB}:${r2}`, ref: `loser:${prefix}S4` },
-                { time: timeSeed1, id: `${prefix}S4`, t1: `seed:${pC}:${r2}`, t2: `seed:${pD}:${r2}`, ref: `seed:${pB}:${r2}` },
-                { time: qfTime1, id: `${prefix}1`, t1: `winner:${prefix}S1`, t2: `loser:${prefix}S4`, ref: `loser:${prefix}S2` },
-                { time: qfTime2, id: `${prefix}2`, t1: `winner:${prefix}S3`, t2: `loser:${prefix}S2`, ref: `loser:${prefix}1` },
-                { time: qfTime2, id: `${prefix}3`, t1: `winner:${prefix}S2`, t2: `loser:${prefix}S3`, ref: `loser:${prefix}4` },
-                { time: qfTime1, id: `${prefix}4`, t1: `winner:${prefix}S4`, t2: `loser:${prefix}S1`, ref: `loser:${prefix}S3` },
-                { time: sfTime, id: `${prefix}5`, t1: `winner:${prefix}1`, t2: `winner:${prefix}2`, ref: `loser:${prefix}2` },
-                { time: sfTime, id: `${prefix}6`, t1: `winner:${prefix}3`, t2: `winner:${prefix}4`, ref: `loser:${prefix}3` },
-                { time: finalTime, id: `${prefix}7`, t1: `winner:${prefix}5`, t2: `winner:${prefix}6`, ref: `loser:${prefix}5` }
-            );
-        } else {
-            allBracketMatches.push(
-                { time: qfTime1, id: `${prefix}1`, t1: `seed:${pA}:${r1}`, t2: `seed:${pB}:${r2}`, ref: `seed:${pC}:${r2}` },
-                { time: qfTime2, id: `${prefix}2`, t1: `seed:${pD}:${r1}`, t2: `seed:${pC}:${r2}`, ref: `loser:${prefix}1` },
-                { time: qfTime2, id: `${prefix}3`, t1: `seed:${pC}:${r1}`, t2: `seed:${pD}:${r2}`, ref: `loser:${prefix}4` },
-                { time: qfTime1, id: `${prefix}4`, t1: `seed:${pB}:${r1}`, t2: `seed:${pA}:${r2}`, ref: `seed:${pD}:${r2}` },
-                { time: sfTime, id: `${prefix}5`, t1: `winner:${prefix}1`, t2: `winner:${prefix}2`, ref: `loser:${prefix}2` },
-                { time: sfTime, id: `${prefix}6`, t1: `winner:${prefix}3`, t2: `winner:${prefix}4`, ref: `loser:${prefix}3` },
-                { time: finalTime, id: `${prefix}7`, t1: `winner:${prefix}5`, t2: `winner:${prefix}6`, ref: `loser:${prefix}5` }
-            );
-        }
+        allBracketMatches.push(...mappedMatches);
     });
 
     const isPoolFinished = (poolId) => {
@@ -233,18 +185,13 @@ export function renderMyTeam(teamId) {
                 if (wonMatch) bracketMatchWins++;
                 else bracketMatchLosses++;
 
+                // Inside uiTeam.js, where you calculate highestRound:
                 let round = 0;
-                const matchNum = m.id.replace(/[GSB]/, '');
-                if (matchNum === '7') round = 3; 
-                else if (matchNum === '5' || matchNum === '6') round = 2; 
-                else if (['1','2','3','4'].includes(matchNum)) round = 1; 
+                if (m.col === 'Quarterfinals') round = 1;
+                else if (m.col === 'Semifinals') round = 2;
+                else if (m.col === 'Finals' || m.col === 'Championship') round = 3;
                 
-                if (round > highestRound || (round === highestRound && wonMatch)) {
-                    highestRound = round;
-                    wonHighest = wonMatch;
-                    const divPrefix = m.id.charAt(0);
-                    divName = divPrefix === 'G' ? 'Gold' : divPrefix === 'S' ? 'Silver' : 'Bronze';
-                }
+                if (round > highestRound) highestRound = round;
             }
         }
     });
@@ -264,29 +211,7 @@ export function renderMyTeam(teamId) {
         ? `<img src="${team.logo_id}" style="width: 70px; height: 70px; object-fit: contain;">`
         : `<div style="width: 70px; height: 70px; border-radius: 8px; background: var(--accent-orange);"></div>`;
 
-    const gridStyles = `
-        <style>
-            .team-match-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding-bottom: 15px; }
-            @media (max-width: 1300px) { .team-match-grid { grid-template-columns: repeat(4, 1fr); } }
-            @media (max-width: 1050px) { .team-match-grid { grid-template-columns: repeat(3, 1fr); } }
-            @media (max-width: 768px) { .team-match-grid { grid-template-columns: repeat(2, 1fr); } }
-            @media (max-width: 480px) { .team-match-grid { grid-template-columns: 1fr; } }
-            .team-header-container { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; background: var(--surface-dark); border: 1px solid var(--border-color); border-left: 6px solid var(--accent-orange); border-radius: 8px; padding: 20px; margin-bottom: 25px; }
-            .team-header-identity { display: flex; align-items: center; gap: 20px; flex: 1 1 300px; }
-            .team-header-stats { display: flex; gap: 25px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; }
-            
-            @media (max-width: 768px) { 
-                .team-header-container { flex-direction: column; text-align: center; border-left: 1px solid var(--border-color); border-top: 6px solid var(--accent-orange); gap: 25px; } 
-                /* Reset flex-basis to auto so it doesn't force a 300px height */
-                .team-header-identity { flex-direction: column; gap: 10px; width: 100%; flex: 0 1 auto; } 
-                .team-header-stats { justify-content: center; width: 100%; flex: 0 1 auto; } 
-                .header-divider { display: none !important; }
-            }
-        </style>
-    `;
-
     let html = `
-        ${gridStyles}
         <div class="team-header-container">
             <div class="team-header-identity">
                 ${logoHtml}
@@ -333,19 +258,7 @@ export function renderMyTeam(teamId) {
 
     // Determine the next upcoming match index for pool matches to highlight it automatically
     const myPoolMatches = matches.filter(m => m.teamA === team.id || m.teamB === team.id || m.ref === team.id);
-    myPoolMatches.sort((a, b) => {
-        const timeCompare = (a.time || '').localeCompare(b.time || '');
-        if (timeCompare !== 0) return timeCompare;
-        
-        const getMatchWeight = (match) => {
-            const tA = teams.find(t => t.id === match.teamA);
-            const tB = teams.find(t => t.id === match.teamB);
-            const isSeed1 = (tA && parseInt(tA.seed) === 1) || (tB && parseInt(tB.seed) === 1);
-            return isSeed1 ? 1 : 0; 
-        };
-        
-        return getMatchWeight(a) - getMatchWeight(b);
-    });
+    myPoolMatches.sort((a, b) => a.time.localeCompare(b.time));
     const nextPoolMatchId = myPoolMatches.find(m => m.status !== 'completed' && m.status !== 'complete')?.id;
 
     // 4. MATCH CARD TEMPLATE
@@ -394,7 +307,7 @@ export function renderMyTeam(teamId) {
             }
         }
 
-        const displayTime = isBracket ? m.time : formatPoolTime(m.time);
+        const displayTime = isBracket ? m.time : formatTime(m.time);
         
         let statusBadge = '';
         if (matchState === 'completed') {
@@ -405,9 +318,10 @@ export function renderMyTeam(teamId) {
             statusBadge = `<div style="display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--accent-orange); color: var(--accent-orange); border-radius: 4px; font-size: 0.8rem;" title="Upcoming">-</div>`;
         }
 
+        // Gracefully truncate long ref names instead of wrapping
         const refBadge = isRefOnly 
-            ? `<span style="background: var(--accent-orange); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; display: inline-block;">REF DUTY</span>`
-            : `<span style="border: 1px solid #334155; color: var(--text-secondary); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; display: inline-block; white-space: nowrap;">Ref: <span style="color: ${refName === team.name ? 'var(--accent-orange)' : '#cbd5e1'}; font-weight: 500;">${refName}</span></span>`;
+            ? `<span style="background: var(--accent-orange); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; display: inline-block; flex-shrink: 0;">REF DUTY</span>`
+            : `<span style="border: 1px solid #334155; color: var(--text-secondary); padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; display: inline-flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; flex-shrink: 1;">Ref:&nbsp;<span style="color: ${refName === team.name ? 'var(--accent-orange)' : '#cbd5e1'}; font-weight: 500; overflow: hidden; text-overflow: ellipsis;">${refName}</span></span>`;
 
         let tAColor = 'white', tBColor = 'white';
         let tAWeight = 'normal', tBWeight = 'normal';
@@ -447,15 +361,16 @@ export function renderMyTeam(teamId) {
         const cardLeftBorder = isActive ? '4px solid var(--accent-orange)' : (!isRefOnly ? '4px solid var(--accent-orange)' : '4px solid #334155');
         const cardShadow = isActive ? '0 4px 15px rgba(0,0,0,0.5)' : 'none';
 
+        // Notice the height: 100% on the main container and flex-wrap: nowrap on the header group!
         return `
-            <div style="background: ${cardBg}; border-radius: 8px; border: ${cardBorder}; border-left: ${cardLeftBorder}; padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; box-shadow: ${cardShadow};">
+            <div style="background: ${cardBg}; border-radius: 8px; border: ${cardBorder}; border-left: ${cardLeftBorder}; padding: 10px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; box-shadow: ${cardShadow}; height: 100%; box-sizing: border-box; justify-content: center;">
                 <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
-                    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                    <div style="display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; overflow: hidden; flex: 1;">
                         ${statusBadge}
-                        ${matchLabel ? `<span style="color: white; font-size: 0.65rem; font-weight: bold; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; display: inline-block; white-space: nowrap;">${matchLabel}</span>` : ''}
+                        ${matchLabel ? `<span style="color: white; font-size: 0.65rem; font-weight: bold; background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; display: inline-block; white-space: nowrap; flex-shrink: 0;">${matchLabel}</span>` : ''}
                         ${refBadge}
                     </div>
-                    <div style="text-align: right;">
+                    <div style="text-align: right; flex-shrink: 0;">
                         <div style="color: var(--accent-orange); font-size: 0.75rem; font-weight: bold; white-space: nowrap;">🕒 ${displayTime}</div>
                     </div>
                 </div>
