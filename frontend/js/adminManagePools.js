@@ -91,6 +91,13 @@ export function renderAdminPools() {
     const container = document.getElementById('adminScoresGrid');
     if (!container) return;
 
+    // Grab the configuration data to ensure we have the custom site colors
+    const tourneyData = getTournamentData();
+    let config = tourneyData?.bracket_config || {};
+    if (typeof config === 'string') {
+        try { config = JSON.parse(config); } catch(e) {}
+    }
+
     const standingsByPool = getAllPoolStandings();
     const pools = getPools();
     const allMatches = getMatches();
@@ -108,7 +115,13 @@ export function renderAdminPools() {
     pools.forEach(pool => {
         const standings = standingsByPool[pool.id] || [];
         const poolMatches = allMatches.filter(m => m.pool_id === pool.id).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-        const headerColor = getSiteColor(pool.site);
+        
+        // TRIM FIX FOR COLORS: Ensure trailing spaces don't break the color match!
+        const pSite = (pool.site || '').trim();
+        let headerColor = 'var(--accent-orange)';
+        if (pSite && pSite === (config.site1Name || '').trim()) headerColor = config.site1Color || headerColor;
+        else if (pSite && pSite === (config.site2Name || '').trim()) headerColor = config.site2Color || headerColor;
+        else if (pSite && pSite === (config.site3Name || '').trim()) headerColor = config.site3Color || headerColor;
         
         const isPoolComplete = poolMatches.length > 0 && poolMatches.every(m => m.status === 'completed' || m.status === 'complete');
         const maxMatches = standings.length > 0 ? standings.length - 1 : 0; 
@@ -125,7 +138,7 @@ export function renderAdminPools() {
             <div class="pool-card-content">
                 <table class="pool-standings-table">
                     <colgroup>
-                        <col style="width: 38px;">
+                        <!-- Seed column completely removed for better spacing -->
                         <col style="width: auto;"> 
                         <col style="width: 28px;"> 
                         <col style="width: 28px;"> 
@@ -136,7 +149,7 @@ export function renderAdminPools() {
                     </colgroup>
                     <thead>
                         <tr class="header-row1">
-                            <th rowspan="2">Seed</th>
+                            <!-- Seed header removed -->
                             <th rowspan="2" style="text-align: left; padding-left: 8px;">Team</th>
                             <th colspan="2" style="border-left: 1px solid var(--border-color); color: #fff; font-size: 0.7rem;">Matches</th>
                             <th colspan="2" style="border-left: 1px solid var(--border-color); color: #fff; font-size: 0.7rem;">Sets</th>
@@ -154,12 +167,11 @@ export function renderAdminPools() {
                         ${standings.map((team, index) => {
                             const isLocked = checkMathematicalLock(team, index, standings, maxMatches);
                             
+                            // Only generate the placement badge if they are locked in
                             let seedDisplay = '';
                             if (isPoolComplete || isLocked) {
                                 const placeClass = index < 3 ? `seed-${index + 1}` : 'seed-unlocked';
-                                seedDisplay = `<span class="seed-badge ${placeClass}">${getOrdinalSuffix(index + 1)}</span>`;
-                            } else {
-                                seedDisplay = `<span class="seed-badge seed-unlocked">${team.seed === 99 ? '-' : team.seed}</span>`;
+                                seedDisplay = `<span class="seed-badge ${placeClass}" style="margin-right: 6px;">${getOrdinalSuffix(index + 1)}</span>`;
                             }
 
                             const logoHtml = team.logo_id ? `<img src="${team.logo_id}" style="width: 24px; height: 24px; object-fit: contain; border-radius: 4px; flex-shrink: 0;">` : `<div style="width: 20px; height: 20px; border-radius: 4px; background: ${team.color || '#3b82f6'}; flex-shrink: 0;"></div>`;
@@ -170,10 +182,10 @@ export function renderAdminPools() {
 
                             const rowHtml = `
                             <tr class="standings-row">
-                                <td>${seedDisplay}</td>
                                 <td style="text-align: left; padding-left: 8px; font-weight: bold; overflow: hidden;">
                                     <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
-                                        ${logoHtml}
+                                        <!-- Seed dynamically injected directly next to the team logo! -->
+                                        ${seedDisplay}${logoHtml}
                                         <span style="color: ${nameColor}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: inline-block;">
                                             ${team.name}
                                         </span>
