@@ -233,6 +233,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         renderPublicInfo();
         renderPublicPools();
+
+        // --- AUTO-REFRESH LOOP ---
+        // Silently fetch new matches every 30 seconds and re-render the active views
+        setInterval(async () => {
+            // loadSchedule() handles fetching the db and triggering renderPublicPools()
+            await loadSchedule(); 
+            
+            // If the user is actively looking at the bracket, give that a live refresh too
+            const bracketsView = document.getElementById('bracketsView');
+            if (bracketsView && bracketsView.classList.contains('active')) {
+                if (typeof renderBracketView === 'function') {
+                    renderBracketView();
+                }
+            }
+        }, 30000); // 30,000 milliseconds = 30 seconds
     } else if (!tournamentSlug) {
         loadTournamentDirectory();
     }
